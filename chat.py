@@ -1,46 +1,71 @@
 import streamlit as st
-import openai
+import openai, os
 
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+# --- Config -------------------------------------------------
+openai.api_key  = st.secrets["OPENAI_API_KEY"]
+ASSISTANT_ID    = st.secrets["ASSISTANT_ID"]
 
-st.title("💬 Chatbot OpenAI (streaming propre)")
+# --- Helpers mis en cache -----------------------------------
+@st.cache_resource(show_spinner=False)
+def get_client():
+    """Client unique, réutilisé entre les reruns."""
+    return openai.Client(api_key=openai.api_key)
 
-# Historique en session
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "system", "content": "Tu es un assistant francophone, utile et concis."}
-    ]
+client = get_client()
 
-# 1) Rejouer l’historique (on saute le système)
-for msg in st.session_state.messages[1:]:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+@st.cache_resource(show_spinner=False)
+def get_thread():
+    """Un thread par session utilisateur Streamlit."""
+    return client.beta.threads.create().id
 
-# 2) Entrée utilisateur
+thread_id = get_thread()
+
+# --- UI -----------------------------------------------------
+st.title("💬 Chatbot via Assistant API")
+
+# Historique : on relit toutes les paires user/assistant déjà stockées
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+for role, content in st.session_state.history:
+    with st.chat_message(role):
+        st.markdown(content)
+
+# Champ d’entrée utilisateur
 if prompt := st.chat_input("Pose ta question…"):
-    # a) On sauvegarde et affiche immédiatement la question
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    # 1) Affichage immédiat de la question
     with st.chat_message("user"):
         st.markdown(prompt)
+    st.session_state.history.append(("user", prompt))
 
-    # b) Préparer le bloc assistant + placeholder
+    # 2) Enregistrement dans le thread distant
+    client.beta.threads.messages.create(
+        thread_id=thread_id,
+        role="user",
+        content=prompt
+    )
+
+    # 3) Lancement du run en streaming
     with st.chat_message("assistant"):
         placeholder = st.empty()
         full_reply = ""
 
-        # c) Appel OpenAI en streaming
-        for chunk in openai.chat.completions.create(
-            model="gpt-4o-mini",           # ou "gpt-4.1-mini"
-            messages=st.session_state.messages,
-            stream=True
+        # La méthode 'stream' ouvre un flux SSE d’événements
+        # et itère jusqu’à la fin du run.
+        for event in client.beta.threads.runs.stream(
+            thread_id=thread_id,
+            assistant_id=ASSISTANT_ID,
         ):
-            delta = chunk.choices[0].delta
-            if delta.content:
-                full_reply += delta.content
-                placeholder.markdown(full_reply + "▌")  # remplace le contenu
+            # On s’intéresse aux deltas de texte générés par l’assistant
+            if event.event == "thread.message.delta":
+                delta = event.data.delta
+                # Chaque delta.content est une liste d’éléments ;
+                # on ne garde que ceux de type "text"
+                for part in delta.content:
+                    if part.type == "text":
+                        full_reply += part.text.value
+                        placeholder.markdown(full_reply + "▌")
 
-        # d) Contenu final (sans curseur)
+        # 4) Texte final (sans curseur) + sauvegarde
         placeholder.markdown(full_reply)
-
-    # e) On ajoute la réponse complète à l’historique
-    st.session_state.messages.append({"role": "assistant", "content": full_reply})
+        st.session_state.history.append(("assistant", full_reply))
