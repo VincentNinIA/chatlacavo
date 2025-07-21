@@ -1,42 +1,46 @@
 import streamlit as st
 import openai
 
-# 1) Clef stockée dans st.secrets ou dans vos variables d'environnement
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
-st.title("💬 Chatbot OpenAI (basique)")
+st.title("💬 Chatbot OpenAI (streaming propre)")
 
-# 2) Persistance de la conversation dans la session Streamlit
+# Historique en session
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "system", "content": "Tu es un assistant francophone utile et concis."}
+        {"role": "system", "content": "Tu es un assistant francophone, utile et concis."}
     ]
 
-# 3) Afficher l'historique
-for msg in st.session_state.messages:
-    st.chat_message(msg["role"]).write(msg["content"])
+# 1) Rejouer l’historique (on saute le système)
+for msg in st.session_state.messages[1:]:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-# 4) Champ d’entrée utilisateur
+# 2) Entrée utilisateur
 if prompt := st.chat_input("Pose ta question…"):
+    # a) On sauvegarde et affiche immédiatement la question
     st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-    # 5) Appel OpenAI — sans tools
-    with st.spinner("OpenAI réfléchit…"):
-        response = openai.chat.completions.create(
-            model="gpt-4o-mini",       # ou "gpt-4.1-mini"
-            messages=st.session_state.messages,
-            stream=True               # streaming mot‑à‑mot
-        )
-
-        # 6) Affichage streaming
-        stream_container = st.chat_message("assistant")
+    # b) Préparer le bloc assistant + placeholder
+    with st.chat_message("assistant"):
+        placeholder = st.empty()
         full_reply = ""
-        for chunk in response:
+
+        # c) Appel OpenAI en streaming
+        for chunk in openai.chat.completions.create(
+            model="gpt-4o-mini",           # ou "gpt-4.1-mini"
+            messages=st.session_state.messages,
+            stream=True
+        ):
             delta = chunk.choices[0].delta
             if delta.content:
                 full_reply += delta.content
-                stream_container.markdown(full_reply + "▌")
+                placeholder.markdown(full_reply + "▌")  # remplace le contenu
 
-        # 7) On fige la réponse finale
-        stream_container.markdown(full_reply)
-        st.session_state.messages.append({"role": "assistant", "content": full_reply})
+        # d) Contenu final (sans curseur)
+        placeholder.markdown(full_reply)
+
+    # e) On ajoute la réponse complète à l’historique
+    st.session_state.messages.append({"role": "assistant", "content": full_reply})
