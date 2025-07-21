@@ -1,39 +1,42 @@
 import streamlit as st
 import openai
 
-# 1) Clé stockée dans st.secrets
+# 1) Clef stockée dans st.secrets ou dans vos variables d'environnement
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
-# 2) Créer (ou récupérer) l'assistant/agent
-@st.cache_resource  # évite de recréer à chaque rerun
-def get_assistant():
-    return openai.responses.create(
-        model="gpt-4.1-mini",
-        instructions="Tu es un assistant francophone spécialisé IA & Python.",
-        tools=[{"type": "web_search"},
-               {"type": "file_search"},
-               {"type": "computer_use"}]
-    )
-assistant = get_assistant()
+st.title("💬 Chatbot OpenAI (basique)")
 
-# 3) Thread persistant en session
-if "thread_id" not in st.session_state:
-    st.session_state.thread_id = openai.responses.Thread.create().id
+# 2) Persistance de la conversation dans la session Streamlit
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {"role": "system", "content": "Tu es un assistant francophone utile et concis."}
+    ]
 
-# 4) Interface utilisateur
-user_msg = st.chat_input("💬 Pose ta question…")
-if user_msg:
-    openai.responses.Thread.add_message(
-        thread_id=st.session_state.thread_id,
-        role="user",
-        content=user_msg
-    )
-    with st.spinner("L'assistant réfléchit…"):
-        for chunk in openai.responses.Thread.create_run(
-            thread_id=st.session_state.thread_id,
-            assistant_id=assistant.id,
-            stream=True
-        ):
+# 3) Afficher l'historique
+for msg in st.session_state.messages:
+    st.chat_message(msg["role"]).write(msg["content"])
+
+# 4) Champ d’entrée utilisateur
+if prompt := st.chat_input("Pose ta question…"):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    # 5) Appel OpenAI — sans tools
+    with st.spinner("OpenAI réfléchit…"):
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",       # ou "gpt-4.1-mini"
+            messages=st.session_state.messages,
+            stream=True               # streaming mot‑à‑mot
+        )
+
+        # 6) Affichage streaming
+        stream_container = st.chat_message("assistant")
+        full_reply = ""
+        for chunk in response:
             delta = chunk.choices[0].delta
             if delta.content:
-                st.write(delta.content, unsafe_allow_html=True)
+                full_reply += delta.content
+                stream_container.markdown(full_reply + "▌")
+
+        # 7) On fige la réponse finale
+        stream_container.markdown(full_reply)
+        st.session_state.messages.append({"role": "assistant", "content": full_reply})
