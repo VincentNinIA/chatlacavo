@@ -37,7 +37,7 @@ if not st.session_state.show_chat:
     st.stop()
 
 # ---------- Vue Chat ----------
-st.title("💬 Simulation de conflit — Carole & JP")
+st.title("Julie directrice galerie d'art Bitch !!!!")
 
 # --- Bouton RESET ---
 if st.button("🗑️ Effacer la conversation", type="secondary"):
