@@ -1,4 +1,4 @@
 # requirements.txt
-openai>=1.0.0b20      # accès à Responses API
+openai>=1.0.0b21      # accès à Responses API
 tiktoken>=0.7.0       # tokenisation compatible GPT‑4.1
 streamlit>=1.33
