@@ -12,7 +12,7 @@ def get_thread():
 thread_id = get_thread()
 
 # ---------- UI ----------
-st.title("💬 Assistant OpenAI (stream)")
+st.title("TITRE DU CHATBOT")
 
 if "history" not in st.session_state:
     st.session_state.history = []
